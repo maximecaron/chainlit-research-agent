@@ -1,0 +1,6 @@
+chainlit==2.9.2
+ddgs
+pocketflow
+requests
+python-dotenv
+openai
