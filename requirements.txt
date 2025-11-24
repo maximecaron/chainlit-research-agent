@@ -4,3 +4,4 @@ pocketflow
 requests
 python-dotenv
 openai
+pydantic

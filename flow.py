@@ -1,6 +1,6 @@
 import asyncio
 from pocketflow import AsyncFlow
-from nodes import DecideAction, SearchWeb, AnswerQuestion
+from nodes import ClarifyGoalNode, PlanResearchNode, DecideNode, ExecutePlanNode, SynthesizeNode, SearchWeb, AnswerQuestion
 
 def create_agent_flow():
     """
@@ -16,19 +16,25 @@ def create_agent_flow():
         Flow: A complete research agent flow
     """
     # Create instances of each node
-    decide = DecideAction()
+    clarify = ClarifyGoalNode()
+    plan = PlanResearchNode()
+    decide = DecideNode()
+    execute = ExecutePlanNode()
+    synthesize = SynthesizeNode()
     search = SearchWeb()
     answer = AnswerQuestion()
     
+
+   # Entry: clarify -> plan
+    clarify >> plan
+    plan - "decide" >> decide
+    execute - "decide" >> decide
+
     # Connect the nodes
-    # If DecideAction returns "search", go to SearchWeb
-    decide - "search" >> search
-    
-    # If DecideAction returns "answer", go to AnswerQuestion
-    decide - "answer" >> answer
-    
-    # After SearchWeb completes and returns "decide", go back to DecideAction
-    search - "decide" >> decide
+    decide - "execute" >> execute
+    decide - "synthesize" >> synthesize
+    decide - "plan" >> plan
+    decide - "reflect" >> synthesize
     
     # Create and return the flow, starting with the DecideAction node
-    return AsyncFlow(start=decide) 
+    return AsyncFlow(start=clarify) 
