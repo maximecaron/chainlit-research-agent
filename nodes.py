@@ -7,41 +7,7 @@ from util import search_web
 from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 import yaml
-
-class ResearchConstraints(BaseModel):
-    """
-    A set of limiting factors or requirements for the research output.
-    """
-        
-    model_config = ConfigDict(extra="forbid") 
-    audience: Optional[str] = Field(
-        ..., 
-        description="The intended target audience (e.g., 'experts', 'beginners'). Return null if not specified."
-    )
-    depth: Optional[str] = Field(
-        ..., 
-        description="The level of detail required (e.g., 'high-level overview', 'deep technical dive'). Return null if not specified."
-    )
-    region: Optional[str] = Field(
-        ..., 
-        description="The geographic region to focus on (e.g., 'North America', 'Global'). Return null if not specified."
-    )
-    time_scope: Optional[str] = Field(
-        ..., 
-        description="The time period relevant to the research (e.g., 'last 5 years', '2023-2024'). Return null if not specified."
-    )
-    format: Optional[str] = Field(
-        ..., 
-        description="The desired output format (e.g., 'bullet points', 'whitepaper'). Return null if not specified."
-    )
-
-class ResearchRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid") 
-    goal: str = Field(
-        ..., 
-        description="A concise, 1-sentence summary of the main research objective."
-    )
-    constraints: ResearchConstraints
+from model import ResearchConstraints, ResearchRequest, SubQuestion, ResearchPlan, AgentAction, SearchQueries
 
 class ClarifyGoalNode(AsyncNode):
     """Normalize the raw user query into a goal + constraints."""
@@ -67,48 +33,6 @@ class ClarifyGoalNode(AsyncNode):
            step.output = exec_res
         # start with planning after clarification
         return "default"
-
-class SubQuestion(BaseModel):
-    """
-    A granular research tasks to achieve the objective
-    """
-    model_config = ConfigDict(extra="forbid") 
-    id: str = Field(
-        ..., 
-        description="Unique identifier for the question, e.g., 'Q1'"
-    )
-    description: str = Field(
-        ..., 
-        description="The specific question or task to be researched"
-    )
-    priority: int = Field(
-        ..., 
-        description="Execution order priority (1 = highest/first)"
-    )
-    dependencies: List[str] = Field(
-        ..., 
-        description="List of IDs (e.g., ['Q1']) that must be completed before this one"
-    )
-    suggested_tools: List[str] = Field(
-        ..., 
-        description="Tools recommended for this task, e.g., ['web_search']"
-    )
-    notes: str = Field(
-        ...,
-        description="Any extra context, hints, or constraints for the agent"
-    )
-
-class ResearchPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid") 
-    overall_objective: str = Field(
-        ..., 
-        description="The main goal of the research session"
-    )
-    subquestions: List[SubQuestion]
-    global_strategy: str = Field(
-        ..., 
-        description="A high-level paragraph explaining the approach to the problem"
-    )
 
 class PlanResearchNode(AsyncNode):
     """Plan / task decomposition stage."""
@@ -143,20 +67,6 @@ Return a JSON object
             step.output = exec_res
         return "decide"
 
-class AgentAction(BaseModel):
-    """
-    Represents the next action the agent should take and its reasoning.
-    """
-    model_config = ConfigDict(extra="forbid") 
-    action: Literal["plan", "execute", "reflect", "synthesize"] = Field(
-        ..., 
-        description="The specific action the agent has decided to take next."
-    )
-    reason: str = Field(
-        ..., 
-        description="A short explanation of the reasoning behind choosing this action."
-    )
-
 class DecideNode(AsyncNode):
     """ReAct-style controller node.
 
@@ -185,7 +95,7 @@ class DecideNode(AsyncNode):
         if prep_res["steps"] >= self.MAX_STEPS:
             return {
                 "action": "synthesize",
-                "reason": f"Reached max_steps={self.MAX_STEPS}, forcing synthesis.",
+                "thought_process": f"Reached max_steps={self.MAX_STEPS}, forcing synthesis.",
             }
 
         system = (
@@ -215,10 +125,6 @@ Last action: {prep_res.get('last_action')}
 Last observation: {prep_res.get('last_observation')}
 
 Return JSON:
-{{
-  "action": "plan" | "execute" | "reflect" | "synthesize",
-  "reason": "short explanation of your reasoning"
-}}
 """
         return await call_llm.call_llm_json_async(system, user, AgentAction)
 
@@ -231,7 +137,7 @@ Return JSON:
         action: Literal["plan", "execute", "reflect", "synthesize"] = exec_res.get(
             "action", "synthesize"
         )
-        reason = exec_res.get("reason", "(no reason)")
+        thought_process = exec_res.get("thought_process", "(no reason)")
         last_action = prep_res.get("last_action") or "(none yet)"
         last_obs = prep_res.get("last_observation") or "(no observation yet)"
         step_idx = prep_res["steps"]
@@ -249,7 +155,7 @@ Return JSON:
         ) as step:
             thought_el = cl.Text(
                 name="Thought",
-                content=reason,
+                content=thought_process,
                 display="inline",
             )
             action_el = cl.Text(
@@ -265,18 +171,6 @@ Return JSON:
             step.output = " "
             step.elements = [thought_el, action_el, obs_el]
         return action
-
-class SearchQueries(BaseModel):
-    """
-    A Pydantic model to structure a list of web search queries.
-    """
-    model_config = ConfigDict(extra="forbid") 
-    queries: List[str] = Field(
-        ...,
-        description="A list of 3–5 focused web search queries for the given subquestion.",
-        min_length=3,
-        max_length=5
-    )
 
 class ExecutePlanNode(AsyncNode):
     """Execute the research plan: search + summarize per subquestion."""
@@ -304,7 +198,6 @@ Subquestion:
 {subq['description']}
 
 Return JSON:
-{{ "queries": ["...", "..."] }}
 """
         res = await call_llm.call_llm_json_async(system, user, SearchQueries)
         queries = res.get("queries", [])
@@ -480,4 +373,4 @@ Provide a comprehensive answer using the research results.
         print(f"✅ Answer generated successfully")
         
         # We're done - no need to continue the flow
-        return "done" 
+        return "done"
